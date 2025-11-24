@@ -44,11 +44,6 @@ iot-solar-monitoring-system/
 
 ├── data_analysis/ # Scripts Python y Jupyter
 
-├── docs/ # Documentación técnica
-
-├── data/ # Datos recolectados (CSV)
-
-└── images/ # Gráficas y fotos del sistema
 
 
 ## Hallazgos Clave
