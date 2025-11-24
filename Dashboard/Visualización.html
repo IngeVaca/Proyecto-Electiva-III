@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proyecto Electiva III - Monitoreo Panel Solar</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+/* En la linea 558 se debe ingresar la dirección IP donde está alojado el brocker */ 
+        body {
+            background: linear-gradient(135deg, #556B2F 0%, #6B8E23 100%);
+            min-height: 100vh;
+            padding: 20px;
+            transition: background 1.5s ease;
+        }
+
+        body.night-mode {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+
+        /* Sol/Luna animado */
+        .celestial-body {
+            position: fixed;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            transition: all 2s ease;
+            z-index: -1;
+        }
+
+        .sun {
+            background: radial-gradient(circle, #ffd700, #ff8c00);
+            box-shadow: 0 0 50px #ffa500, 0 0 100px #ff4500;
+            top: 20%;
+            left: 10%;
+        }
+
+        .moon {
+            background: radial-gradient(circle, #f0f0f0, #c0c0c0);
+            box-shadow: 0 0 40px #ffffff, 0 0 80px #e0e0e0;
+            top: 70%;
+            left: 85%;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            font-size: 2.2em;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            color: white;
+        }
+
+        .authors {
+            font-size: 1.1em;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .program {
+            font-size: 1em;
+            margin-bottom: 5px;
+            opacity: 0.9;
+        }
+
+        .university {
+            font-size: 1em;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 8px 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .status.connected {
+            background: rgba(46, 204, 113, 0.3);
+            color: #2ecc71;
+        }
+
+        .status.disconnected {
+            background: rgba(231, 76, 60, 0.3);
+            color: #e74c3c;
+        }
+
+        .status.connecting {
+            background: rgba(241, 196, 15, 0.3);
+            color: #f1c40f;
+        }
+
+        /* Layout Principal */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        /* Panel de Control Izquierdo */
+        .control-panel {
+            background: rgba(255,255,255,0.1);
+            padding: 25px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .panel-title {
+            color: white;
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+            border-bottom: 2px solid rgba(255,255,255,0.3);
+            padding-bottom: 10px;
+        }
+
+        .config-group {
+            margin-bottom: 20px;
+        }
+
+        .config-label {
+            color: white;
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .config-input {
+            padding: 10px 12px;
+            border: none;
+            border-radius: 8px;
+            width: 100%;
+            text-align: center;
+            background: rgba(255,255,255,0.9);
+            font-size: 1em;
+        }
+
+        .time-config {
+            background: rgba(255,255,255,0.15);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            text-align: center;
+        }
+
+        .time-label {
+            color: white;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        /* Botones de Control */
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin: 20px 0;
+        }
+
+        .control-btn {
+            padding: 14px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .btn-start {
+            background: #2ecc71;
+            color: white;
+        }
+
+        .btn-stop {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-export {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-manual {
+            background: #f39c12;
+            color: white;
+        }
+
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .control-btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Estado de Datos */
+        .data-status {
+            text-align: center;
+            color: white;
+            margin: 15px 0;
+            font-size: 1em;
+            background: rgba(0,0,0,0.2);
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2ecc71, #3498db);
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        /* Panel de Información */
+        .info-panel {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .info-item {
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .info-label {
+            font-weight: bold;
+            color: white;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .info-value {
+            color: rgba(255,255,255,0.9);
+            font-size: 0.95em;
+        }
+
+        /* Contenido Principal Derecho */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Tarjetas de Parámetros */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-3px);
+        }
+
+        .card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 10px 0;
+        }
+
+        .unit {
+            font-size: 0.75em;
+            color: #7f8c8d;
+            text-transform: uppercase;
+        }
+
+        /* Gráficos */
+        .chart-container {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            height: 350px;
+        }
+
+        .chart-title {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .last-update {
+            text-align: center;
+            color: white;
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin: 20px 0;
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            opacity: 0.8;
+            font-size: 0.85em;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+
+        /* Colores de las tarjetas */
+        .card:nth-child(1) { border-left: 4px solid #e74c3c; }
+        .card:nth-child(2) { border-left: 4px solid #3498db; }
+        .card:nth-child(3) { border-left: 4px solid #2ecc71; }
+        .card:nth-child(4) { border-left: 4px solid #f39c12; }
+        .card:nth-child(5) { border-left: 4px solid #9b59b6; }
+
+        /* Notificación de descarga */
+        .download-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #2ecc71;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            z-index: 1000;
+            animation: slideIn 0.5s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            
+            .control-panel {
+                order: 2;
+            }
+            
+            .main-content {
+                order: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sol/Luna animado -->
+    <div class="celestial-body sun" id="sun"></div>
+    <div class="celestial-body moon" id="moon"></div>
+
+    <div class="container">
+        <!-- Encabezado -->
+        <div class="header">
+            <h1>Proyecto Electiva III</h1>
+            <div class="authors">Jhon Jaime Vaca Hincapié | Ismael Frías | Cesar Valbuena</div>
+            <div class="program">Maestría en Ingeniería</div>
+            <div class="university">Fundación Universitaria Los Libertadores</div>
+            <div class="status" id="connectionStatus">Desconectado</div>
+        </div>
+
+        <!-- Layout Principal -->
+        <div class="main-layout">
+            <!-- Panel de Control Izquierdo -->
+            <div class="control-panel">
+                <div class="panel-title">Control de Datos</div>
+                
+                <div class="time-config">
+                    <div class="time-label">Horario Automático</div>
+                    <div class="time-label">Inicio: 5:30 AM</div>
+                    <div class="time-label">Fin: 6:30 PM</div>
+                </div>
+                
+                <div class="config-group">
+                    <label class="config-label">Límite de datos:</label>
+                    <input type="number" id="dataLimit" class="config-input" value="500" min="100" max="10000">
+                </div>
+                
+                <div class="config-group">
+                    <label class="config-label">Descarga automática:</label>
+                    <select id="autoDownload" class="config-input">
+                        <option value="true">Activada</option>
+                        <option value="false">Desactivada</option>
+                    </select>
+                </div>
+
+                <!-- Botones de Control -->
+                <div class="controls">
+                    <button class="control-btn btn-start" id="btnStart" onclick="startDataCapture()">
+                        Iniciar Captura
+                    </button>
+                    <button class="control-btn btn-stop" id="btnStop" onclick="stopDataCapture()" disabled>
+                        Detener Captura
+                    </button>
+                    <button class="control-btn btn-export" id="btnExport" onclick="exportToCSV()">
+                        Generar CSV
+                    </button>
+                    <button class="control-btn btn-manual" id="btnManual" onclick="manualCapture()">
+                        Captura Manual
+                    </button>
+                </div>
+
+                <!-- Estado de Captura -->
+                <div class="data-status" id="dataStatus">
+                    Estado: Esperando inicio - 0 registros
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+
+                <!-- Panel de Información -->
+                <div class="info-panel">
+                    <div class="info-item">
+                        <div class="info-label">Estado del Sistema:</div>
+                        <div class="info-value" id="systemStatus">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Registros de Hoy:</div>
+                        <div class="info-value" id="recordsCount">0</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Fecha Actual:</div>
+                        <div class="info-value" id="currentDate">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Próxima Descarga:</div>
+                        <div class="info-value" id="nextDownload">6:30 PM</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Tiempo Restante:</div>
+                        <div class="info-value" id="timeRemaining">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Mensajes Recibidos:</div>
+                        <div class="info-value" id="messagesReceived">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contenido Principal Derecho -->
+            <div class="main-content">
+                <!-- Tarjetas de Parámetros -->
+                <div class="cards-grid">
+                    <div class="card">
+                        <h3>Temperatura</h3>
+                        <div class="value" id="temperatura">--</div>
+                        <div class="unit">Grados Celsius</div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Humedad</h3>
+                        <div class="value" id="humedad">--</div>
+                        <div class="unit">Porcentaje</div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Tensión</h3>
+                        <div class="value" id="voltaje">--</div>
+                        <div class="unit">Voltios</div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Corriente</h3>
+                        <div class="value" id="corriente">--</div>
+                        <div class="unit">Amperios</div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Potencia</h3>
+                        <div class="value" id="potencia">--</div>
+                        <div class="unit">Vatios</div>
+                    </div>
+                </div>
+
+                <!-- Gráfico -->
+                <div class="chart-container">
+                    <div class="chart-title">Evolución de la Tensión durante el Día</div>
+                    <canvas id="voltageChart"></canvas>
+                </div>
+
+                <div class="last-update" id="lastUpdate">
+                    Última actualización: --
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            Sistema de Monitoreo de Panel Solar | Proyecto de Investigación - Maestría en Ingeniería<br>
+            Fundación Universitaria Los Libertadores | 2024
+        </div>
+    </div>
+
+    <script>
+        // Configuración MQTT
+        const brokerHost = "IP Brocekr local EMQX";
+        const brokerPort = 8083;
+        const topic = "FULL/panel";
+
+        // Variables de gestión de datos
+        let capturedData = [];
+        let isCapturing = false;
+        let isAutoMode = false;
+        let dataLimit = 500;
+        let autoDownload = true;
+        let messagesReceived = 0;
+        let currentDay = null;
+
+        // Elementos DOM
+        const connectionStatus = document.getElementById('connectionStatus');
+        const lastUpdate = document.getElementById('lastUpdate');
+        const dataStatus = document.getElementById('dataStatus');
+        const progressFill = document.getElementById('progressFill');
+        const systemStatus = document.getElementById('systemStatus');
+        const recordsCount = document.getElementById('recordsCount');
+        const currentDateElement = document.getElementById('currentDate');
+        const nextDownload = document.getElementById('nextDownload');
+        const timeRemaining = document.getElementById('timeRemaining');
+        const messagesReceivedElement = document.getElementById('messagesReceived');
+        const sunElement = document.getElementById('sun');
+        const moonElement = document.getElementById('moon');
+
+        // Datos para el gráfico
+        const chartData = {
+            labels: [],
+            voltages: []
+        };
+
+        // Inicializar gráfico
+        const voltageCtx = document.getElementById('voltageChart').getContext('2d');
+        const voltageChart = new Chart(voltageCtx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    label: 'Tensión (V)',
+                    data: chartData.voltages,
+                    borderColor: '#2c3e50',
+                    backgroundColor: 'rgba(44, 62, 80, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#2c3e50',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Tensión (V)'
+                        },
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Hora del Día'
+                        },
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true
+                    }
+                }
+            }
+        });
+
+        // Función para actualizar el tema día/noche y posición del sol/luna
+        function updateDayNightTheme() {
+            const now = new Date();
+            const hour = now.getHours();
+            const isDay = hour >= 5 && hour < 18; // 5 AM - 6 PM es día
+            
+            // Cambiar fondo
+            document.body.classList.toggle('night-mode', !isDay);
+            
+            // Posicionar sol y luna según la hora
+            const sunPosition = ((hour - 5) / 13) * 80 + 10; // 5AM-6PM: 10% to 90%
+            const moonPosition = ((hour - 18) / 12) * 80 + 10; // 6PM-5AM: 10% to 90%
+            
+            if (isDay) {
+                sunElement.style.left = `${sunPosition}%`;
+                sunElement.style.opacity = '1';
+                moonElement.style.opacity = '0';
+            } else {
+                moonElement.style.left = `${moonPosition > 90 ? 90 : moonPosition}%`;
+                moonElement.style.opacity = '1';
+                sunElement.style.opacity = '0';
+            }
+        }
+
+        // Función para obtener el día actual
+        function getCurrentDay() {
+            const now = new Date();
+            return now.toISOString().split('T')[0];
+        }
+
+        // Función para verificar horario de captura
+        function isCaptureTime() {
+            const now = new Date();
+            const currentTime = now.getHours() * 60 + now.getMinutes();
+            const startTime = 5 * 60 + 30; // 5:30 AM
+            const endTime = 18 * 60 + 30;  // 6:30 PM
+            
+            return currentTime >= startTime && currentTime <= endTime;
+        }
+
+        // Función para calcular tiempo restante
+        function getTimeRemaining() {
+            const now = new Date();
+            const endTime = new Date();
+            endTime.setHours(18, 30, 0, 0);
+            
+            if (now > endTime) {
+                endTime.setDate(endTime.getDate() + 1);
+            }
+            
+            const diff = endTime - now;
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            return `${hours}h ${minutes}m`;
+        }
+
+        // Función para obtener nombre de archivo
+        function getFileName() {
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+            return `Mediciones ${dateStr}.csv`;
+        }
+
+        // Función para mostrar notificación
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.className = 'download-notification';
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+
+        // Verificar cambio de día
+        function checkDayChange() {
+            const today = getCurrentDay();
+            if (currentDay !== today) {
+                if (capturedData.length > 0) {
+                    exportToCSV(true);
+                }
+                capturedData = [];
+                currentDay = today;
+                updateDataStatus();
+                showNotification(`Nuevo día: ${today} - CSV reiniciado`);
+            }
+        }
+
+        // Control de captura
+        function startDataCapture() {
+            isCapturing = true;
+            isAutoMode = false;
+            dataLimit = parseInt(document.getElementById('dataLimit').value);
+            autoDownload = document.getElementById('autoDownload').value === 'true';
+            
+            document.getElementById('btnStart').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            
+            updateDataStatus();
+        }
+
+        function stopDataCapture() {
+            isCapturing = false;
+            isAutoMode = false;
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            updateDataStatus();
+        }
+
+        function manualCapture() {
+            if (!isCaptureTime()) {
+                isCapturing = true;
+                isAutoMode = false;
+                document.getElementById('btnStart').disabled = true;
+                document.getElementById('btnStop').disabled = false;
+                updateDataStatus();
+                showNotification('Captura manual activada');
+            } else {
+                alert('Sistema en modo automático (5:30 AM - 6:30 PM). Use "Iniciar Captura" para control manual.');
+            }
+        }
+
+        // Actualizar estado de datos
+        function updateDataStatus() {
+            const progress = (capturedData.length / dataLimit) * 100;
+            progressFill.style.width = `${Math.min(progress, 100)}%`;
+            
+            let statusText = `Estado: ${isCapturing ? 'CAPTURANDO' : 'DETENIDO'} - `;
+            statusText += `${capturedData.length} registros de ${dataLimit}`;
+            
+            if (isAutoMode) {
+                statusText += ' (Automático)';
+            }
+            
+            dataStatus.textContent = statusText;
+            recordsCount.textContent = capturedData.length;
+            
+            if (capturedData.length >= dataLimit && isCapturing && autoDownload) {
+                exportToCSV();
+            }
+        }
+
+        // Exportar a CSV
+        function exportToCSV(previousDay = false) {
+            if (capturedData.length === 0) {
+                alert('No hay datos para exportar');
+                return;
+            }
+
+            let dataToExport = capturedData;
+            let fileName = getFileName();
+
+            if (previousDay) {
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const dateStr = yesterday.toISOString().split('T')[0];
+                fileName = `Mediciones ${dateStr}.csv`;
+            }
+
+            const headers = 'Fecha,Hora,Temperatura (C),Humedad (%),Tension (V),Corriente (A),Potencia (W),Timestamp\n';
+            const csvContent = dataToExport.map(row => 
+                `${row.date},${row.time},${row.temperatura},${row.humedad},${row.voltaje},${row.corriente},${row.potencia},${row.timestamp}`
+            ).join('\n');
+
+            const fullCSV = headers + csvContent;
+            
+            const blob = new Blob([fullCSV], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', fileName);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            if ((isAutoMode && autoDownload) || previousDay) {
+                capturedData = [];
+                updateDataStatus();
+                showNotification(`CSV descargado: ${fileName} - ${dataToExport.length} registros`);
+            } else {
+                showNotification(`CSV generado: ${fileName} - ${capturedData.length} registros`);
+            }
+        }
+
+        // Actualizar información del sistema
+        function updateSystemInfo() {
+            const now = new Date();
+            const isDayTime = isCaptureTime();
+            
+            checkDayChange();
+            updateDayNightTheme();
+            
+            currentDateElement.textContent = getCurrentDay();
+            
+            if (isDayTime && !isAutoMode) {
+                isAutoMode = true;
+                isCapturing = true;
+                systemStatus.textContent = 'Modo Automático - Capturando';
+                systemStatus.style.color = '#2ecc71';
+            } else if (!isDayTime && isAutoMode) {
+                isAutoMode = false;
+                isCapturing = false;
+                systemStatus.textContent = 'Modo Nocturno - Descargando...';
+                systemStatus.style.color = '#e74c3c';
+                
+                if (capturedData.length > 0) {
+                    setTimeout(() => {
+                        exportToCSV();
+                        systemStatus.textContent = 'Modo Nocturno - Inactivo';
+                    }, 1000);
+                } else {
+                    systemStatus.textContent = 'Modo Nocturno - Inactivo';
+                }
+            } else if (isDayTime) {
+                systemStatus.textContent = 'Modo Automático - Capturando';
+                systemStatus.style.color = '#2ecc71';
+            } else {
+                systemStatus.textContent = 'Modo Nocturno - Inactivo';
+                systemStatus.style.color = '#e74c3c';
+            }
+            
+            timeRemaining.textContent = getTimeRemaining();
+            messagesReceivedElement.textContent = messagesReceived;
+        }
+
+        // Conexión MQTT
+        let client;
+
+        function connectToMQTT() {
+            try {
+                updateConnectionStatus('connecting', 'Conectando a EMQX...');
+                
+                const clientId = 'solar_dashboard_' + Math.random().toString(16).substr(2, 8);
+                client = new Paho.MQTT.Client(brokerHost, Number(brokerPort), clientId);
+
+                client.onConnectionLost = onConnectionLost;
+                client.onMessageArrived = onMessageArrived;
+
+                client.connect({
+                    onSuccess: onConnect,
+                    onFailure: onFailure,
+                    useSSL: false,
+                    timeout: 5,
+                    keepAliveInterval: 30
+                });
+
+            } catch (error) {
+                console.error("Error MQTT:", error);
+                updateConnectionStatus('disconnected', 'Error de conexión');
+                setTimeout(connectToMQTT, 3000);
+            }
+        }
+
+        function onConnect() {
+            console.log("Conectado a EMQX");
+            updateConnectionStatus('connected', 'Conectado a EMQX');
+            client.subscribe(topic);
+            console.log("Suscrito al topic: " + topic);
+        }
+
+        function onFailure(error) {
+            console.error("Error de conexión:", error);
+            updateConnectionStatus('disconnected', 'Error de conexión');
+            setTimeout(connectToMQTT, 3000);
+        }
+
+        function updateConnectionStatus(status, message) {
+            connectionStatus.textContent = message;
+            connectionStatus.className = 'status ' + status;
+        }
+
+        function onMessageArrived(message) {
+            try {
+                const data = JSON.parse(message.payloadString);
+                messagesReceived++;
+                updateDashboard(data);
+            } catch (error) {
+                console.error("Error parseando JSON:", error);
+            }
+        }
+
+        function updateDashboard(data) {
+            document.getElementById("temperatura").textContent = data.temperatura ? data.temperatura.toFixed(1) : "--";
+            document.getElementById("humedad").textContent = data.humedad ? data.humedad.toFixed(1) : "--";
+            document.getElementById("voltaje").textContent = data.voltaje ? data.voltaje.toFixed(2) : "--";
+            document.getElementById("corriente").textContent = data.corriente ? data.corriente.toFixed(3) : "--";
+            document.getElementById("potencia").textContent = data.potencia ? data.potencia.toFixed(2) : "--";
+
+            if ((isCapturing || isAutoMode) && data.voltaje !== undefined) {
+                const now = new Date();
+                const dateStr = now.toISOString().split('T')[0];
+                const timeStr = now.getHours() + ':' + 
+                              now.getMinutes().toString().padStart(2, '0') + ':' + 
+                              now.getSeconds().toString().padStart(2, '0');
+
+                capturedData.push({
+                    date: dateStr,
+                    time: timeStr,
+                    temperatura: data.temperatura || 0,
+                    humedad: data.humedad || 0,
+                    voltaje: data.voltaje || 0,
+                    corriente: data.corriente || 0,
+                    potencia: data.potencia || 0,
+                    timestamp: now.getTime()
+                });
+
+                updateDataStatus();
+            }
+
+            if (data.voltaje !== undefined) {
+                const now = new Date();
+                const timeString = now.getHours() + ':' + 
+                                 now.getMinutes().toString().padStart(2, '0');
+
+                chartData.labels.push(timeString);
+                chartData.voltages.push(data.voltaje);
+
+                if (chartData.labels.length > 50) {
+                    chartData.labels.shift();
+                    chartData.voltages.shift();
+                }
+
+                voltageChart.update();
+
+                lastUpdate.textContent = "Última actualización: " + now.toLocaleString();
+            }
+        }
+
+        function onConnectionLost(response) {
+            if (response.errorCode !== 0) {
+                console.log("Conexión perdida:", response.errorMessage);
+                updateConnectionStatus('connecting', 'Reconectando...');
+                setTimeout(connectToMQTT, 2000);
+            }
+        }
+
+        // Inicializar dashboard
+        window.addEventListener('load', function() {
+            console.log("Iniciando dashboard...");
+            
+            currentDay = getCurrentDay();
+            currentDateElement.textContent = currentDay;
+            
+            connectToMQTT();
+            
+            setInterval(updateSystemInfo, 60000);
+            updateSystemInfo();
+            
+            setInterval(checkDayChange, 3600000);
+            
+            // Actualizar posición del sol/luna cada minuto
+            setInterval(updateDayNightTheme, 60000);
+            updateDayNightTheme();
+        });
+    </script>
+</body>
+</html>
